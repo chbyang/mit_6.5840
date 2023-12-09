@@ -12,7 +12,22 @@ type Entry struct {
 	Data  interface{}
 }
 
+type Snapshot struct {
+	Data  []byte
+	Index uint64
+	Term  uint64
+}
+
+// Log manages log entries, its struct look like:
+//
+//	     snapshot/first.....applied....committed.....last
+//	-------------|--------------------------------------|
+//	  compacted           persisted log entries
 type Log struct {
+	// compacted log entries.
+	snapshot           Snapshot
+	hasPendingSnapshot bool // true if the snapshot is not yet delivered to the application.
+
 	// persisted log entries.
 	entries []Entry
 
@@ -22,9 +37,11 @@ type Log struct {
 
 func makeLog() Log {
 	log := Log{
-		entries:   []Entry{{Index: 0, Term: 0}}, // use a dummy entry to simplify indexing operations
-		applied:   0,
-		committed: 0,
+		snapshot:           Snapshot{Data: nil, Index: 0, Term: 0},
+		hasPendingSnapshot: false,
+		entries:            []Entry{{Index: 0, Term: 0}}, // use a dummy entry to simplify indexing operations
+		applied:            0,
+		committed:          0,
 	}
 	return log
 }
@@ -85,12 +102,6 @@ func (log *Log) committedTo(index uint64) {
 	}
 }
 
-func (log *Log) appliedTo(index uint64) {
-	if index > log.applied {
-		log.applied = index
-	}
-}
-
 func (log *Log) newCommittedEntries() []Entry {
 	start := log.toArraryIndex(log.applied + 1)
 	end := log.toArraryIndex(log.committed + 1)
@@ -98,4 +109,25 @@ func (log *Log) newCommittedEntries() []Entry {
 		return nil
 	}
 	return log.clone(log.entries[start:end])
+}
+
+func (log *Log) appliedTo(index uint64) {
+	if index > log.applied {
+		log.applied = index
+	}
+}
+
+func (log *Log) compactedTo(snapshot Snapshot) {
+	suffix := make([]Entry, 0)
+	suffixStart := snapshot.Index + 1
+	if suffixStart <= log.lastIndex() {
+		suffixStart = log.toArraryIndex(suffixStart)
+		suffix = log.entries[suffixStart:]
+	}
+	log.entries = append(make([]Entry, 1), suffix...)
+	log.snapshot = snapshot
+	log.entries[0] = Entry{Index: snapshot.Index, Term: snapshot.Term}
+
+	log.committedTo(log.snapshot.Index)
+	log.appliedTo(log.snapshot.Index)
 }

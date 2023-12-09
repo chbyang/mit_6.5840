@@ -55,6 +55,20 @@ type AppendEntriesReply struct {
 	FirstConflictIndex uint64
 }
 
+type InstallSnapshotArgs struct {
+	From     int
+	To       int
+	Term     uint64
+	Snapshot Snapshot
+}
+
+type InstallSnapshotReply struct {
+	From     int
+	To       int
+	Term     uint64
+	CaughtUp bool
+}
+
 type MessageType string
 
 const (

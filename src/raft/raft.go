@@ -82,44 +82,6 @@ func (rf *Raft) GetState() (int, bool) {
 	return term, isleader
 }
 
-// save Raft's persistent state to stable storage,
-// where it can later be retrieved after a crash and restart.
-// see paper's Figure 2 for a description of what should be persistent.
-// before you've implemented snapshots, you should pass nil as the
-// second argument to persister.Save().
-// after you've implemented snapshots, pass the current snapshot
-// (or nil if there's not yet a snapshot).
-func (rf *Raft) persist() {
-	// Your code here (2C).
-	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// raftstate := w.Bytes()
-	// rf.persister.Save(raftstate, nil)
-}
-
-// restore previously persisted state.
-func (rf *Raft) readPersist(data []byte) {
-	if data == nil || len(data) < 1 { // bootstrap without any state?
-		return
-	}
-	// Your code here (2C).
-	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
-}
-
 // the service says it has created a snapshot that has
 // all info up to and including index. this means the
 // service no longer needs the log through (and including)
@@ -155,6 +117,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	entry := Entry{Index: index, Term: rf.term, Data: command}
 	rf.log.append([]Entry{entry})
 	rf.persist()
+	rf.broadcastAppendEntries(true)
 	return int(index), int(rf.term), true
 }
 
@@ -232,8 +195,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	rf.log = makeLog()
 
-	rf.term = 0
-	rf.votedTo = None
+	// initialize from state persisted before a crash
+	if rf.persister.RaftStateSize() > 0 {
+		rf.readPersist(persister.ReadRaftState())
+	} else {
+		rf.term = 0
+		rf.votedTo = None
+	}
 
 	// update tracked indices with the restored log entries.
 	rf.peerTrackers = make([]PeerTracker, len(rf.peers))
@@ -243,9 +211,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// set electionTimeout and lastElection
 	rf.resetElectionTimer()
 	rf.heartbeatTimeout = heartbeatTimeout
-
-	// initialize from state persisted before a crash
-	rf.readPersist(persister.ReadRaftState())
 
 	// start ticker goroutine to start elections
 	go rf.ticker()
