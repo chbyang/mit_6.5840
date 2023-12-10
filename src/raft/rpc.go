@@ -110,12 +110,19 @@ func (rf *Raft) checkState(m Message) bool {
 		fallthrough
 	case Append:
 		eligible = rf.state == Follower
+	case Snap:
+		// warning: not rejecting a new snapshot if there's a pending snapshot may shadow the new snapshot
+		eligible = rf.state == Follower && !rf.log.hasPendingSnapshot
 
 	case VoteReply:
 		eligible = rf.state == Candidate && rf.term == m.ArgsTerm
 	case AppendReply:
 		//check the next index ensures it's exactly the reply corresponding to the last sent AppendEntries.
 		eligible = rf.state == Leader && rf.term == m.ArgsTerm && rf.peerTrackers[m.From].nextIndex-1 == m.PrevLogIndex
+	case SnapReply:
+		// the lag-behind checking ensures the reply corresponds to the last sent InstallSnapshot.
+		eligible = rf.state == Leader && rf.term == m.ArgsTerm && rf.lagBehindSnapshot(m.From)
+
 	default:
 		log.Fatalf("unexpected message type %v", m.Type)
 	}

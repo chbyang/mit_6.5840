@@ -23,7 +23,9 @@ func (rf *Raft) makeAppendEntriesArgs(to int) *AppendEntriesArgs {
 	prevLogIndex := nextIndex - 1
 	prevLogTerm, _ := rf.log.term(prevLogIndex)
 
-	args := &AppendEntriesArgs{From: rf.me, To: to, Term: rf.term, CommittedIndex: rf.log.committed, PrevLogIndex: prevLogIndex, PrevLogTerm: prevLogTerm, Entries: entries}
+	args := &AppendEntriesArgs{From: rf.me, To: to, Term: rf.term,
+		CommittedIndex: rf.log.committed, PrevLogIndex: prevLogIndex,
+		PrevLogTerm: prevLogTerm, Entries: entries}
 	return args
 }
 
@@ -81,7 +83,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		if reply.Err == IndexNotMatched {
 			reply.LastLogIndex = rf.log.lastIndex()
 		} else {
-			reply.ConflictTerm, reply.FirstConflictIndex = rf.findFirstConflict(args.PrevLogIndex)
+			reply.ConflictTerm, reply.FirstConflictIndex =
+				rf.findFirstConflict(args.PrevLogIndex)
 		}
 		return
 	}
@@ -126,7 +129,8 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	m := Message{Type: AppendReply, From: reply.From, Term: reply.Term, ArgsTerm: args.Term, PrevLogIndex: args.PrevLogIndex}
+	m := Message{Type: AppendReply, From: reply.From, Term: reply.Term,
+		ArgsTerm: args.Term, PrevLogIndex: args.PrevLogIndex}
 	ok, termChanged := rf.checkMessage(m)
 	if termChanged {
 		defer rf.persist()
@@ -180,7 +184,10 @@ func (rf *Raft) broadcastAppendEntries(forced bool) {
 		if i == rf.me {
 			continue
 		}
-		if forced || rf.hasNewEntries(i) {
+		if rf.lagBehindSnapshot(i) {
+			args := rf.makeInstallSnapshotArgs(i)
+			go rf.sendInstallSnapshot(args)
+		} else if forced || rf.hasNewEntries(i) {
 			args := rf.makeAppendEntriesArgs(i)
 			go rf.sendAppendEntries(args)
 		}

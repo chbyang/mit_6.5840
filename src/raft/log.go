@@ -131,3 +131,10 @@ func (log *Log) compactedTo(snapshot Snapshot) {
 	log.committedTo(log.snapshot.Index)
 	log.appliedTo(log.snapshot.Index)
 }
+
+func (log *Log) clonedSnapshot() Snapshot {
+	cloned := Snapshot{Data: make([]byte, len(log.snapshot.Data)),
+		Index: log.snapshot.Index, Term: log.snapshot.Term}
+	copy(cloned.Data, log.snapshot.Data)
+	return cloned
+}

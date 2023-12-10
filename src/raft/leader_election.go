@@ -45,14 +45,16 @@ func (rf *Raft) becomeLeader() {
 func (rf *Raft) makeRequestVoteArgs(to int) *RequestVoteArgs {
 	lastLogIndex := rf.log.lastIndex()
 	lastLogTerm, _ := rf.log.term(lastLogIndex)
-	args := &RequestVoteArgs{From: rf.me, To: to, Term: rf.term, LastLogIndex: lastLogIndex, LastLogTerm: lastLogTerm}
+	args := &RequestVoteArgs{From: rf.me, To: to, Term: rf.term,
+		LastLogIndex: lastLogIndex, LastLogTerm: lastLogTerm}
 	return args
 }
 
 func (rf *Raft) eligibleToGrantVote(candidateLastLogIndex, candidateLastLogTerm uint64) bool {
 	lastLogIndex := rf.log.lastIndex()
 	lastLogTerm, _ := rf.log.term(lastLogIndex)
-	return candidateLastLogTerm > lastLogTerm || (candidateLastLogTerm == lastLogTerm && candidateLastLogIndex >= lastLogIndex)
+	return candidateLastLogTerm > lastLogTerm ||
+		(candidateLastLogTerm == lastLogTerm && candidateLastLogIndex >= lastLogIndex)
 }
 
 // example RequestVote RPC handler.
@@ -76,7 +78,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		return
 	}
 	// Chaobin: votedTo 可以分票。什么时候是args.From?
-	if (rf.votedTo == None || rf.votedTo == args.From) && rf.eligibleToGrantVote(args.LastLogIndex, args.LastLogTerm) {
+	if (rf.votedTo == None || rf.votedTo == args.From) &&
+		rf.eligibleToGrantVote(args.LastLogIndex, args.LastLogTerm) {
 		rf.votedTo = args.From
 		rf.resetElectionTimer()
 		reply.Voted = true

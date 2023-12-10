@@ -24,7 +24,14 @@ type ApplyMsg struct {
 func (rf *Raft) committer() {
 	rf.mu.Lock()
 	for !rf.killed() {
-		if newCommittedEntries := rf.log.newCommittedEntries(); len(newCommittedEntries) > 0 {
+		if rf.log.hasPendingSnapshot {
+			snapshot := rf.log.clonedSnapshot()
+			rf.mu.Unlock()
+			rf.applyCh <- ApplyMsg{SnapshotValid: true, Snapshot: snapshot.Data,
+				SnapshotIndex: int(snapshot.Index), SnapshotTerm: int(snapshot.Term)}
+			rf.mu.Lock()
+			rf.log.hasPendingSnapshot = false
+		} else if newCommittedEntries := rf.log.newCommittedEntries(); len(newCommittedEntries) > 0 {
 			rf.mu.Unlock()
 			for _, entry := range newCommittedEntries {
 				rf.applyCh <- ApplyMsg{CommandValid: true, Command: entry.Data, CommandIndex: int(entry.Index)}
