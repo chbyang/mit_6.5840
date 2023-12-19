@@ -1,49 +1,41 @@
 package kvraft
 
 import (
+	"sync"
+	"sync/atomic"
+
 	"6.5840/labgob"
 	"6.5840/labrpc"
 	"6.5840/raft"
-	"log"
-	"sync"
-	"sync/atomic"
 )
 
-const Debug = false
-
-func DPrintf(format string, a ...interface{}) (n int, err error) {
-	if Debug {
-		log.Printf(format, a...)
-	}
-	return
-}
-
-
-type Op struct {
-	// Your definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
-}
-
 type KVServer struct {
-	mu      sync.Mutex
-	me      int
-	rf      *raft.Raft
-	applyCh chan raft.ApplyMsg
-	dead    int32 // set by Kill()
+	mu        sync.Mutex
+	me        int
+	rf        *raft.Raft
+	applyCh   chan raft.ApplyMsg
+	dead      int32 // set by Kill()
+	persister *raft.Persister
 
 	maxraftstate int // snapshot if log grows this big
-
-	// Your definitions here.
+	gcEnabled    bool
+	db           map[string]string // kv store
+	// the maximum op id among all applied ops of each clerk.
+	maxAppliedOpIdOfClerk map[int64]int
+	// notifier for each clerk.
+	notifierOfClerk map[int64]*Notifier
 }
-
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
+	op := &Op{ClerkId: args.ClerkId, OpId: args.OpId, OpType: "Get", Key: args.Key}
+	reply.Err, reply.Value = kv.waitUntilAppliedOrTimeout(op)
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
+	op := &Op{ClerkId: args.ClerkId, OpId: args.OpId, OpType: args.OpType, Key: args.Key, Value: args.Value}
+	reply.Err, _ = kv.waitUntilAppliedOrTimeout(op)
 }
 
 // the tester calls Kill() when a KVServer instance won't
@@ -77,21 +69,35 @@ func (kv *KVServer) killed() bool {
 // you don't need to snapshot.
 // StartKVServer() must return quickly, so it should start goroutines
 // for any long-running work.
-func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int) *KVServer {
+func StartKVServer(servers []*labrpc.ClientEnd, me int,
+	persister *raft.Persister, maxraftstate int) *KVServer {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
-	labgob.Register(Op{})
+	labgob.Register(&Op{})
 
 	kv := new(KVServer)
 	kv.me = me
+	kv.persister = persister
+	kv.mu = sync.Mutex{}
+
 	kv.maxraftstate = maxraftstate
+	kv.gcEnabled = maxraftstate != -1
 
 	// You may need initialization code here.
+	if kv.gcEnabled && kv.persister.SnapshotSize() > 0 {
+		// Chaobin
+	} else {
+		kv.db = make(map[string]string)
+		kv.maxAppliedOpIdOfClerk = make(map[int64]int)
+	}
 
+	kv.notifierOfClerk = map[int64]*Notifier{}
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
 	// You may need initialization code here.
+	go kv.executor()
+	go kv.noOpTicker()
 
 	return kv
 }
