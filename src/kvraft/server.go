@@ -85,7 +85,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int,
 
 	// You may need initialization code here.
 	if kv.gcEnabled && kv.persister.SnapshotSize() > 0 {
-		// Chaobin
+		kv.ingestSnapshot(kv.persister.ReadSnapshot())
 	} else {
 		kv.db = make(map[string]string)
 		kv.maxAppliedOpIdOfClerk = make(map[int64]int)

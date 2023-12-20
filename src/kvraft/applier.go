@@ -35,13 +35,16 @@ func (kv *KVServer) executor() {
 		}
 		kv.mu.Lock()
 		if m.SnapshotValid {
-			// Chaobin
+			kv.ingestSnapshot(m.Snapshot)
 		} else {
 			op := m.Command.(*Op)
 			if kv.isNoOp(op) {
 
 			} else {
 				kv.maybeApplyClientOp(op)
+			}
+			if kv.gcEnabled && kv.approachGCLimit() {
+				kv.checkpoint(m.CommandIndex)
 			}
 		}
 		kv.mu.Unlock()
@@ -52,6 +55,7 @@ func (kv *KVServer) waitUntilAppliedOrTimeout(op *Op) (Err, string) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	if !kv.isApplied(op) {
+		// send command to raft
 		if !kv.propose(op) {
 			return ErrWrongLeader, ""
 		}
